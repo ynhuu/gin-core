@@ -31,6 +31,11 @@ func MustNewServer(addr string) *Server {
 		al,
 	}
 	server.Use(ginLogger(), ginRecovery(true))
+
+	if gin.Mode() == gin.DebugMode {
+		server.SetZapLevel(zap.DebugLevel)
+	}
+
 	return server
 }
 
