@@ -45,11 +45,12 @@ func newZap(al zap.AtomicLevel) {
 		Compress:   true, // 是否压缩
 	}
 
-	core := zapcore.NewCore(
-		zapcore.NewJSONEncoder(encoderConfig),
-		zapcore.NewMultiWriteSyncer(zapcore.AddSync(os.Stdout), zapcore.AddSync(&writer)),
-		al,
-	)
+	ws := []zapcore.WriteSyncer{zapcore.AddSync(os.Stdout)}
+	if gin.Mode() == gin.ReleaseMode {
+		ws = append(ws, zapcore.AddSync(&writer))
+	}
+
+	core := zapcore.NewCore(zapcore.NewJSONEncoder(encoderConfig), zapcore.NewMultiWriteSyncer(ws...), al)
 
 	logger := zap.New(core, zap.AddCaller())
 	zap.ReplaceGlobals(logger)
@@ -59,7 +60,7 @@ func newZap(al zap.AtomicLevel) {
 func ginLogger() gin.HandlerFunc {
 	logger := zap.L().WithOptions(zap.WithCaller(false))
 	return func(c *gin.Context) {
-		if c.Request.Method == "OPTIONS" {
+		if c.Request.Method == "OPTIONS" || c.Writer.Status() == 404 {
 			c.Next()
 			return
 		}
