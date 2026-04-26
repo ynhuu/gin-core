@@ -4,13 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"net/http"
 	"net/http/httputil"
 	"os"
 	"path/filepath"
@@ -38,11 +38,11 @@ func newZap(al zap.AtomicLevel) {
 	path, _ := os.Executable()
 	name := fmt.Sprintf("logs/%s.log", filepath.Base(path))
 	writer := lumberjack.Logger{
-		Filename:   name, // 日志文件路径
-		MaxSize:    20,   // 每个日志文件保存的最大尺寸 单位：M
-		MaxBackups: 5,    // 日志文件最多保存多少个备份
-		MaxAge:     5,    // 文件最多保存多少天
-		Compress:   true, // 是否压缩
+		Filename:   name,
+		MaxSize:    20,
+		MaxBackups: 5,
+		MaxAge:     5,
+		Compress:   true,
 	}
 
 	ws := []zapcore.WriteSyncer{zapcore.AddSync(os.Stdout)}
@@ -60,7 +60,7 @@ func newZap(al zap.AtomicLevel) {
 func ginLogger() gin.HandlerFunc {
 	logger := zap.L().WithOptions(zap.WithCaller(false))
 	return func(c *gin.Context) {
-		if c.Request.Method == "OPTIONS" || c.Writer.Status() == 404 {
+		if c.Request.Method == http.MethodOptions {
 			c.Next()
 			return
 		}
@@ -68,6 +68,10 @@ func ginLogger() gin.HandlerFunc {
 		path := c.Request.URL.Path
 		query := c.Request.URL.RawQuery
 		c.Next()
+
+		if c.Writer.Status() == http.StatusNotFound {
+			return
+		}
 
 		cost := time.Since(start)
 		fields := []zapcore.Field{
@@ -95,6 +99,11 @@ func ginRecovery(stack bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
+				recoveredErr, ok := err.(error)
+				if !ok {
+					recoveredErr = fmt.Errorf("%v", err)
+				}
+
 				var brokenPipe bool
 				if ne, ok := err.(*net.OpError); ok {
 					var se *os.SyscallError
@@ -110,23 +119,23 @@ func ginRecovery(stack bool) gin.HandlerFunc {
 				httpRequest, _ := httputil.DumpRequest(c.Request, false)
 				if brokenPipe {
 					zap.L().Error(c.Request.URL.Path,
-						zap.Any("error", err),
+						zap.Error(recoveredErr),
 						zap.String("request", string(httpRequest)),
 					)
-					_ = c.Error(err.(error))
+					_ = c.Error(recoveredErr)
 					c.Abort()
 					return
 				}
 
 				if stack {
 					zap.L().Error("[Recovery from panic]",
-						zap.Any("error", err),
+						zap.Error(recoveredErr),
 						zap.String("request", string(httpRequest)),
 						zap.String("stack", string(debug.Stack())),
 					)
 				} else {
 					zap.L().Error("[Recovery from panic]",
-						zap.Any("error", err),
+						zap.Error(recoveredErr),
 						zap.String("request", string(httpRequest)),
 					)
 				}

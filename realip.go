@@ -11,10 +11,8 @@ func RealIP(c *gin.Context) string {
 
 	for _, header := range headers {
 		if ip := c.GetHeader(header); ip != "" {
-			if strings.Contains(ip, ",") {
-				return strings.TrimSpace(strings.Split(ip, ",")[0])
-			}
-			return strings.TrimSpace(ip)
+			first, _, _ := strings.Cut(ip, ",")
+			return strings.TrimSpace(first)
 		}
 	}
 
