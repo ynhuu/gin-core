@@ -104,6 +104,11 @@ func ginRecovery(stack bool) gin.HandlerFunc {
 					recoveredErr = fmt.Errorf("%v", err)
 				}
 
+				if errors.Is(recoveredErr, http.ErrAbortHandler) {
+					c.Abort()
+					return
+				}
+
 				var brokenPipe bool
 				if ne, ok := err.(*net.OpError); ok {
 					var se *os.SyscallError
